@@ -31,6 +31,10 @@ public class AudioDeviceManager: ObservableObject {
     @Published public var outputDevices: [AudioDevice] = []
     @Published public var inputDevices: [AudioDevice] = []
     @Published public var activeAggregateID: AudioObjectID? = nil
+    @Published public var defaultOutputDeviceUID: String? = nil
+    @Published public var defaultInputDeviceUID: String? = nil
+    @Published public var isMultiOutputEnabled = false
+    @Published public var selectedOutputUIDs: Set<String> = []
     private var previousDefaultDeviceID: AudioObjectID? = nil
     private var registeredListeners: Set<RegisteredListener> = []
     
@@ -115,6 +119,50 @@ public class AudioDeviceManager: ObservableObject {
         self.outputDevices = newOutputs
         self.inputDevices = newInputs
         
+        // Query default output device UID
+        var defaultOutputAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var defaultOutputID: AudioObjectID = 0
+        var defaultOutputSize = UInt32(MemoryLayout<AudioObjectID>.size)
+        let defaultOutputStatus = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &defaultOutputAddr,
+            0,
+            nil,
+            &defaultOutputSize,
+            &defaultOutputID
+        )
+        if defaultOutputStatus == noErr {
+            self.defaultOutputDeviceUID = getDeviceUID(defaultOutputID)
+        } else {
+            self.defaultOutputDeviceUID = nil
+        }
+        
+        // Query default input device UID
+        var defaultInputAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var defaultInputID: AudioObjectID = 0
+        var defaultInputSize = UInt32(MemoryLayout<AudioObjectID>.size)
+        let defaultInputStatus = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &defaultInputAddr,
+            0,
+            nil,
+            &defaultInputSize,
+            &defaultInputID
+        )
+        if defaultInputStatus == noErr {
+            self.defaultInputDeviceUID = getDeviceUID(defaultInputID)
+        } else {
+            self.defaultInputDeviceUID = nil
+        }
+        
         setupVolumeListeners()
     }
     
@@ -147,6 +195,52 @@ public class AudioDeviceManager: ObservableObject {
             }
         } else {
             print("Failed to set volume for device \(device.name): \(status)")
+        }
+    }
+    
+    public func setDefaultOutputDevice(uid: String) {
+        guard let device = outputDevices.first(where: { $0.uid == uid }) else { return }
+        var defaultAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var targetID = device.objectID
+        let status = AudioObjectSetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &defaultAddr,
+            0,
+            nil,
+            UInt32(MemoryLayout<AudioObjectID>.size),
+            &targetID
+        )
+        if status == noErr {
+            self.defaultOutputDeviceUID = uid
+        } else {
+            print("Failed to set default output device: \(status)")
+        }
+    }
+    
+    public func setDefaultInputDevice(uid: String) {
+        guard let device = inputDevices.first(where: { $0.uid == uid }) else { return }
+        var defaultAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var targetID = device.objectID
+        let status = AudioObjectSetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &defaultAddr,
+            0,
+            nil,
+            UInt32(MemoryLayout<AudioObjectID>.size),
+            &targetID
+        )
+        if status == noErr {
+            self.defaultInputDeviceUID = uid
+        } else {
+            print("Failed to set default input device: \(status)")
         }
     }
     
@@ -384,6 +478,8 @@ public class AudioDeviceManager: ObservableObject {
         )
         
         if status == noErr {
+            self.isMultiOutputEnabled = true
+            self.selectedOutputUIDs = Set(physicalUIDs)
             print("Success: Multi-Device Output enabled with \(physicalUIDs)")
         } else {
             print("Warning: Created aggregate device but failed to set it as system default output: \(status)")
@@ -391,6 +487,8 @@ public class AudioDeviceManager: ObservableObject {
     }
     
     public func disableMultiDeviceOutput() {
+        self.isMultiOutputEnabled = false
+        self.selectedOutputUIDs = []
         guard let id = activeAggregateID else { return }
         
         // 1. Find a fallback physical output device that is not our aggregate device, and restore system default output to it
