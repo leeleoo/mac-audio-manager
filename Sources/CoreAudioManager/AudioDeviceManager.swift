@@ -504,6 +504,17 @@ public class AudioDeviceManager: ObservableObject {
         return status == noErr ? volume : 0.5
     }
     
+    public func isDeviceVolumeSettable(_ id: AudioObjectID, isInput: Bool) -> Bool {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyVolumeScalar,
+            mScope: isInput ? kAudioDevicePropertyScopeInput : kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var isSettable: DarwinBoolean = false
+        let status = AudioObjectIsPropertySettable(id, &propertyAddress, &isSettable)
+        return status == noErr ? isSettable.boolValue : false
+    }
+    
     private func getDeviceMute(_ id: AudioObjectID, isInput: Bool) -> Bool {
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyMute,
