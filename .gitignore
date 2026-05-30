@@ -1,0 +1,7 @@
+.superpowers/
+node_modules/
+.DS_Store
+build/
+dist/
+.build/
+.swiftpm/
