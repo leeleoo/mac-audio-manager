@@ -13,13 +13,11 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "CoreAudioManager",
-            dependencies: [],
-            path: "Sources"
+            dependencies: []
         ),
         .testTarget(
             name: "CoreAudioManagerTests",
-            dependencies: ["CoreAudioManager"],
-            path: "Tests"
+            dependencies: ["CoreAudioManager"]
         )
     ]
 )
