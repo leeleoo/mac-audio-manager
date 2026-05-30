@@ -29,3 +29,23 @@ import CoreAudio
         print("- Input: \(dev.name) (UID: \(dev.uid), ObjectID: \(dev.objectID), Vol: \(dev.volume), Muted: \(dev.isMuted))")
     }
 }
+
+@MainActor
+@Test func testAggregateDeviceLifecycle() async throws {
+    let manager = AudioDeviceManager()
+    manager.reloadDevices()
+    
+    // Clean up ghosts
+    manager.cleanUpGhostDevices()
+    
+    if manager.outputDevices.count >= 2 {
+        let uids = manager.outputDevices.prefix(2).map { $0.uid }
+        manager.enableMultiDeviceOutput(with: uids)
+        
+        try? await Task.sleep(nanoseconds: 500_000_000)
+        
+        manager.disableMultiDeviceOutput()
+    } else {
+        print("Skipped testAggregateDeviceLifecycle: Not enough output devices available.")
+    }
+}
