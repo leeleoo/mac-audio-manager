@@ -1,6 +1,15 @@
 import Foundation
 import CoreAudio
 
+private let hardwareDevicesListener: AudioObjectPropertyListenerProc = { (objectID, numberAddresses, addresses, clientData) -> OSStatus in
+    guard let clientData = clientData else { return noErr }
+    let manager = Unmanaged<AudioDeviceManager>.fromOpaque(clientData).takeUnretainedValue()
+    Task { @MainActor in
+        manager.reloadDevices()
+    }
+    return noErr
+}
+
 @MainActor
 public class AudioDeviceManager: ObservableObject {
     @Published public var outputDevices: [AudioDevice] = []
@@ -8,6 +17,22 @@ public class AudioDeviceManager: ObservableObject {
     
     public init() {
         self.reloadDevices()
+        self.setupListener()
+    }
+    
+    deinit {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let clientData = Unmanaged.passUnretained(self).toOpaque()
+        _ = AudioObjectRemovePropertyListener(
+            AudioObjectID(kAudioObjectSystemObject),
+            &propertyAddress,
+            hardwareDevicesListener,
+            clientData
+        )
     }
     
     public func reloadDevices() {
@@ -33,18 +58,39 @@ public class AudioDeviceManager: ObservableObject {
             guard let name = getDeviceName(id), let uid = getDeviceUID(id) else { continue }
             let hasOutput = deviceHasStreams(id, isInput: false)
             let hasInput = deviceHasStreams(id, isInput: true)
-            let vol = getDeviceVolume(id)
             
             if hasOutput {
-                newOutputs.append(AudioDevice(id: id, name: name, uid: uid, isInput: false, volume: vol, isMuted: false))
+                let vol = getDeviceVolume(id, isInput: false)
+                let mute = getDeviceMute(id, isInput: false)
+                newOutputs.append(AudioDevice(objectID: id, name: name, uid: uid, isInput: false, volume: vol, isMuted: mute))
             }
             if hasInput {
-                newInputs.append(AudioDevice(id: id, name: name, uid: uid, isInput: true, volume: vol, isMuted: false))
+                let vol = getDeviceVolume(id, isInput: true)
+                let mute = getDeviceMute(id, isInput: true)
+                newInputs.append(AudioDevice(objectID: id, name: name, uid: uid, isInput: true, volume: vol, isMuted: mute))
             }
         }
         
         self.outputDevices = newOutputs
         self.inputDevices = newInputs
+    }
+    
+    private func setupListener() {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        let clientData = Unmanaged.passUnretained(self).toOpaque()
+        let status = AudioObjectAddPropertyListener(
+            AudioObjectID(kAudioObjectSystemObject),
+            &propertyAddress,
+            hardwareDevicesListener,
+            clientData
+        )
+        if status != noErr {
+            // Can log or handle listener registration error if necessary
+        }
     }
     
     private func getDeviceName(_ id: AudioObjectID) -> String? {
@@ -82,15 +128,27 @@ public class AudioDeviceManager: ObservableObject {
         return status == noErr && dataSize > 0
     }
     
-    private func getDeviceVolume(_ id: AudioObjectID) -> Float {
+    private func getDeviceVolume(_ id: AudioObjectID, isInput: Bool) -> Float {
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyVolumeScalar,
-            mScope: kAudioDevicePropertyScopeOutput,
+            mScope: isInput ? kAudioDevicePropertyScopeInput : kAudioDevicePropertyScopeOutput,
             mElement: kAudioObjectPropertyElementMain
         )
         var volume: Float = 0.0
         var dataSize = UInt32(MemoryLayout<Float>.size)
         let status = AudioObjectGetPropertyData(id, &propertyAddress, 0, nil, &dataSize, &volume)
         return status == noErr ? volume : 0.5
+    }
+    
+    private func getDeviceMute(_ id: AudioObjectID, isInput: Bool) -> Bool {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyMute,
+            mScope: isInput ? kAudioDevicePropertyScopeInput : kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var isMuted: UInt32 = 0
+        var dataSize = UInt32(MemoryLayout<UInt32>.size)
+        let status = AudioObjectGetPropertyData(id, &propertyAddress, 0, nil, &dataSize, &isMuted)
+        return status == noErr ? (isMuted != 0) : false
     }
 }

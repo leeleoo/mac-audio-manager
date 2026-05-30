@@ -13,9 +13,19 @@ import CoreAudio
     let manager = AudioDeviceManager()
     manager.reloadDevices()
     
-    #expect(manager.outputDevices.count >= 0)
+    // Assert that we retrieved output devices and each one has non-empty name and uid
     print("Found \(manager.outputDevices.count) output devices.")
     for dev in manager.outputDevices {
-        print("- Output: \(dev.name) (UID: \(dev.uid))")
+        #expect(!dev.name.isEmpty)
+        #expect(!dev.uid.isEmpty)
+        print("- Output: \(dev.name) (UID: \(dev.uid), ObjectID: \(dev.objectID), Vol: \(dev.volume), Muted: \(dev.isMuted))")
+    }
+    
+    // Assert that we retrieved input devices and each one has non-empty name and uid
+    print("Found \(manager.inputDevices.count) input devices.")
+    for dev in manager.inputDevices {
+        #expect(!dev.name.isEmpty)
+        #expect(!dev.uid.isEmpty)
+        print("- Input: \(dev.name) (UID: \(dev.uid), ObjectID: \(dev.objectID), Vol: \(dev.volume), Muted: \(dev.isMuted))")
     }
 }
