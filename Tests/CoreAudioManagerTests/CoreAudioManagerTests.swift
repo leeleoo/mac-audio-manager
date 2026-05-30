@@ -49,3 +49,28 @@ import CoreAudio
         print("Skipped testAggregateDeviceLifecycle: Not enough output devices available.")
     }
 }
+
+@MainActor
+@Test func testVolumeSetting() async throws {
+    let manager = AudioDeviceManager()
+    manager.reloadDevices()
+    
+    if let firstOut = manager.outputDevices.first(where: { $0.uid != manager.aggregateUID }) {
+        let originalVol = firstOut.volume
+        let testVol = min(max(originalVol + 0.05, 0.0), 1.0)
+        
+        manager.setVolume(for: firstOut, to: testVol)
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        
+        manager.reloadDevices()
+        let updatedVol = manager.outputDevices.first(where: { $0.uid == firstOut.uid })?.volume ?? 0.0
+        
+        // Restore
+        manager.setVolume(for: firstOut, to: originalVol)
+        
+        #expect(abs(updatedVol - testVol) < 0.08)
+        print("Volume setter test passed. Original: \(originalVol) -> Test: \(testVol) -> Got: \(updatedVol)")
+    } else {
+        print("Skipped testVolumeSetting: No suitable output device found.")
+    }
+}

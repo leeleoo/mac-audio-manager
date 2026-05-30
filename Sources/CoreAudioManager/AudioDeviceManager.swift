@@ -10,12 +10,29 @@ private let hardwareDevicesListener: AudioObjectPropertyListenerProc = { (object
     return noErr
 }
 
+struct RegisteredListener: Hashable {
+    var objectID: AudioObjectID
+    var selector: AudioObjectPropertySelector
+    var scope: AudioObjectPropertyScope
+    var element: AudioObjectPropertyElement
+}
+
+private let deviceVolumeListener: AudioObjectPropertyListenerProc = { (objectID, numberAddresses, addresses, clientData) -> OSStatus in
+    guard let clientData = clientData else { return noErr }
+    let manager = Unmanaged<AudioDeviceManager>.fromOpaque(clientData).takeUnretainedValue()
+    Task { @MainActor in
+        manager.deviceVolumeChanged(objectID)
+    }
+    return noErr
+}
+
 @MainActor
 public class AudioDeviceManager: ObservableObject {
     @Published public var outputDevices: [AudioDevice] = []
     @Published public var inputDevices: [AudioDevice] = []
     @Published public var activeAggregateID: AudioObjectID? = nil
     private var previousDefaultDeviceID: AudioObjectID? = nil
+    private var registeredListeners: Set<RegisteredListener> = []
     
     public let aggregateName = "Multi-Output CoreManager"
     public let aggregateUID = "com.antigravity.audiomanager.aggregate"
@@ -27,6 +44,7 @@ public class AudioDeviceManager: ObservableObject {
     }
     
     deinit {
+        let listeners = registeredListeners
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -39,9 +57,26 @@ public class AudioDeviceManager: ObservableObject {
             hardwareDevicesListener,
             clientData
         )
+        
+        // Remove all registered volume listeners
+        for listener in listeners {
+            var addr = AudioObjectPropertyAddress(
+                mSelector: listener.selector,
+                mScope: listener.scope,
+                mElement: listener.element
+            )
+            _ = AudioObjectRemovePropertyListener(
+                listener.objectID,
+                &addr,
+                deviceVolumeListener,
+                clientData
+            )
+        }
     }
     
     public func reloadDevices() {
+        removeVolumeListeners()
+        
         var propertyAddress = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal,
@@ -79,6 +114,116 @@ public class AudioDeviceManager: ObservableObject {
         
         self.outputDevices = newOutputs
         self.inputDevices = newInputs
+        
+        setupVolumeListeners()
+    }
+    
+    public func setVolume(for device: AudioDevice, to value: Float) {
+        var propertyAddress = AudioObjectPropertyAddress(
+            mSelector: kAudioDevicePropertyVolumeScalar,
+            mScope: device.isInput ? kAudioDevicePropertyScopeInput : kAudioDevicePropertyScopeOutput,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        
+        var volumeValue = value
+        let status = AudioObjectSetPropertyData(
+            device.objectID,
+            &propertyAddress,
+            0,
+            nil,
+            UInt32(MemoryLayout<Float>.size),
+            &volumeValue
+        )
+        
+        if status == noErr {
+            if device.isInput {
+                if let index = inputDevices.firstIndex(where: { $0.uid == device.uid }) {
+                    inputDevices[index].volume = value
+                }
+            } else {
+                if let index = outputDevices.firstIndex(where: { $0.uid == device.uid }) {
+                    outputDevices[index].volume = value
+                }
+            }
+        } else {
+            print("Failed to set volume for device \(device.name): \(status)")
+        }
+    }
+    
+    public func deviceVolumeChanged(_ objectID: AudioObjectID) {
+        for i in 0..<outputDevices.count {
+            if outputDevices[i].objectID == objectID {
+                let newVol = getDeviceVolume(objectID, isInput: false)
+                outputDevices[i].volume = newVol
+            }
+        }
+        for i in 0..<inputDevices.count {
+            if inputDevices[i].objectID == objectID {
+                let newVol = getDeviceVolume(objectID, isInput: true)
+                inputDevices[i].volume = newVol
+            }
+        }
+    }
+    
+    private func removeVolumeListeners() {
+        let clientData = Unmanaged.passUnretained(self).toOpaque()
+        for listener in registeredListeners {
+            var addr = AudioObjectPropertyAddress(
+                mSelector: listener.selector,
+                mScope: listener.scope,
+                mElement: listener.element
+            )
+            _ = AudioObjectRemovePropertyListener(
+                listener.objectID,
+                &addr,
+                deviceVolumeListener,
+                clientData
+            )
+        }
+        registeredListeners.removeAll()
+    }
+    
+    private func setupVolumeListeners() {
+        let clientData = Unmanaged.passUnretained(self).toOpaque()
+        
+        for dev in outputDevices {
+            guard dev.uid != aggregateUID else { continue }
+            registerVolumeListener(for: dev.objectID, isInput: false, clientData: clientData)
+        }
+        
+        for dev in inputDevices {
+            guard dev.uid != aggregateUID else { continue }
+            registerVolumeListener(for: dev.objectID, isInput: true, clientData: clientData)
+        }
+    }
+    
+    private func registerVolumeListener(for objectID: AudioObjectID, isInput: Bool, clientData: UnsafeMutableRawPointer) {
+        let scope = isInput ? kAudioDevicePropertyScopeInput : kAudioDevicePropertyScopeOutput
+        let listener = RegisteredListener(
+            objectID: objectID,
+            selector: kAudioDevicePropertyVolumeScalar,
+            scope: scope,
+            element: kAudioObjectPropertyElementMain
+        )
+        
+        guard !registeredListeners.contains(listener) else { return }
+        
+        var addr = AudioObjectPropertyAddress(
+            mSelector: listener.selector,
+            mScope: listener.scope,
+            mElement: listener.element
+        )
+        
+        let status = AudioObjectAddPropertyListener(
+            objectID,
+            &addr,
+            deviceVolumeListener,
+            clientData
+        )
+        
+        if status == noErr {
+            registeredListeners.insert(listener)
+        }
     }
     
     public func cleanUpGhostDevices() {
