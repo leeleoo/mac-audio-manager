@@ -67,13 +67,21 @@ public struct ContentView: View {
                                     Image(systemName: "speaker.fill")
                                         .font(.system(size: 10))
                                         .foregroundColor(.secondary)
-                                    Slider(value: Binding(
-                                        get: { device.volume },
-                                        set: { val in
-                                            manager.setVolume(for: device, to: val)
-                                        }
-                                    ), in: 0...1)
-                                    .accentColor(.green)
+                                    if device.isVolumeSettable {
+                                        Slider(value: Binding(
+                                            get: { device.volume },
+                                            set: { val in
+                                                manager.setVolume(for: device, to: val)
+                                            }
+                                        ), in: 0...1)
+                                        .accentColor(.green)
+                                    } else {
+                                        Text("数字 HDMI/DP 设备，不支持系统软件调音")
+                                            .font(.system(size: 10, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                            .frame(maxWidth: .infinity, alignment: .center)
+                                            .padding(.vertical, 4)
+                                    }
                                     Image(systemName: "speaker.wave.3.fill")
                                         .font(.system(size: 10))
                                         .foregroundColor(.secondary)
@@ -125,13 +133,21 @@ public struct ContentView: View {
                                     Image(systemName: "mic.slash.fill")
                                         .font(.system(size: 10))
                                         .foregroundColor(.secondary)
-                                    Slider(value: Binding(
-                                        get: { device.volume },
-                                        set: { val in
-                                            manager.setVolume(for: device, to: val)
-                                        }
-                                    ), in: 0...1)
-                                    .accentColor(.blue)
+                                    if device.isVolumeSettable {
+                                        Slider(value: Binding(
+                                            get: { device.volume },
+                                            set: { val in
+                                                manager.setVolume(for: device, to: val)
+                                            }
+                                        ), in: 0...1)
+                                        .accentColor(.blue)
+                                    } else {
+                                        Text("数字输入设备，不支持系统软件调音")
+                                            .font(.system(size: 10, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                            .frame(maxWidth: .infinity, alignment: .center)
+                                            .padding(.vertical, 4)
+                                    }
                                     Image(systemName: "mic.and.signal.meter.fill")
                                         .font(.system(size: 10))
                                         .foregroundColor(.secondary)

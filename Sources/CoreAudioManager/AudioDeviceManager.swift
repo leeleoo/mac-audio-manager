@@ -107,12 +107,14 @@ public class AudioDeviceManager: ObservableObject {
             if hasOutput {
                 let vol = getDeviceVolume(id, isInput: false)
                 let mute = getDeviceMute(id, isInput: false)
-                newOutputs.append(AudioDevice(objectID: id, name: name, uid: uid, isInput: false, volume: vol, isMuted: mute))
+                let settable = isDeviceVolumeSettable(id, isInput: false)
+                newOutputs.append(AudioDevice(objectID: id, name: name, uid: uid, isInput: false, volume: vol, isMuted: mute, isVolumeSettable: settable))
             }
             if hasInput {
                 let vol = getDeviceVolume(id, isInput: true)
                 let mute = getDeviceMute(id, isInput: true)
-                newInputs.append(AudioDevice(objectID: id, name: name, uid: uid, isInput: true, volume: vol, isMuted: mute))
+                let settable = isDeviceVolumeSettable(id, isInput: true)
+                newInputs.append(AudioDevice(objectID: id, name: name, uid: uid, isInput: true, volume: vol, isMuted: mute, isVolumeSettable: settable))
             }
         }
         
