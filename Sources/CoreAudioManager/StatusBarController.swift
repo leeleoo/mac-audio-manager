@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 
 @MainActor
 public class StatusBarController {
@@ -7,6 +8,7 @@ public class StatusBarController {
     private var panel: Panel
     private var manager: AudioDeviceManager
     private var hostingView: NSHostingView<ContentView>
+    private var cancellables = Set<AnyCancellable>()
     
     public init(manager: AudioDeviceManager) {
         self.manager = manager
@@ -19,6 +21,34 @@ public class StatusBarController {
             button.title = "🔊"
             button.action = #selector(togglePanel(_:))
             button.target = self
+        }
+        
+        setupBindings()
+    }
+    
+    private func setupBindings() {
+        manager.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                // Delay slightly to let the @Published properties update
+                DispatchQueue.main.async {
+                    self?.updateStatusItem()
+                }
+            }
+            .store(in: &cancellables)
+            
+        // Initial title loading
+        updateStatusItem()
+    }
+    
+    private func updateStatusItem() {
+        guard let button = statusItem.button else { return }
+        
+        if manager.isMultiOutputEnabled && manager.selectedOutputUIDs.count >= 2 {
+            let count = manager.selectedOutputUIDs.count
+            button.title = "🔊 [\(count)]"
+        } else {
+            button.title = "🔊"
         }
     }
     

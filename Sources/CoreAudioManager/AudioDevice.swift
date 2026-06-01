@@ -1,7 +1,7 @@
 import Foundation
 import CoreAudio
 
-public struct AudioDevice: Identifiable, Hashable {
+public struct AudioDevice: Identifiable, Hashable, Sendable {
     public var id: String { uid }
     public var objectID: AudioObjectID
     public var name: String
